@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Minecraft-style Game (Mobile-Friendly)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        body { margin: 0; overflow: hidden; touch-action: none; }
+        #crosshair {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        .control-row {
+            display: flex;
+            justify-content: center;
+        }
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            margin: 5px;
+            background-color: rgba(255,255,255,0.5);
+            border: none;
+            border-radius: 50%;
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div id="crosshair"></div>
+    <div id="controls">
+        <div class="control-row">
+            <button class="control-btn" id="up">↑</button>
+        </div>
+        <div class="control-row">
+            <button class="control-btn" id="left">←</button>
+            <button class="control-btn" id="down">↓</button>
+            <button class="control-btn" id="right">→</button>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Create checkered pattern
+        function createCheckerTexture(size) {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = size;
+            const context = canvas.getContext('2d');
+            context.fillStyle = '#ffffff';
+            context.fillRect(0, 0, size, size);
+            context.fillStyle = '#cccccc';
+            context.fillRect(0, 0, size/2, size/2);
+            context.fillRect(size/2, size/2, size/2, size/2);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        const checkerTexture = createCheckerTexture(64);
+        checkerTexture.wrapS = THREE.RepeatWrapping;
+        checkerTexture.wrapT = THREE.RepeatWrapping;
+        checkerTexture.repeat.set(100, 100);
+
+        // Create skybox
+        const skyboxGeometry = new THREE.BoxGeometry(1000, 1000, 1000);
+        const skyboxMaterial = new THREE.MeshBasicMaterial({
+            map: checkerTexture,
+            side: THREE.BackSide
+        });
+        const skybox = new THREE.Mesh(skyboxGeometry, skyboxMaterial);
+        scene.add(skybox);
+
+        // Create ground
+        const groundGeometry = new THREE.PlaneGeometry(1000, 1000);
+        const groundMaterial = new THREE.MeshBasicMaterial({map: checkerTexture});
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        scene.add(ground);
+
+        // Create pixelated human
+        const playerGeometry = new THREE.BoxGeometry(0.6, 1.8, 0.6);
+        const playerMaterial = new THREE.MeshBasicMaterial({color: 0x00ff00});
+        const player = new THREE.Mesh(playerGeometry, playerMaterial);
+        player.position.set(0, 2, 0);
+        scene.add(player);
+
+        camera.position.set(0, 1.6, 0);
+        player.add(camera);
+
+        const geometry = new THREE.BoxGeometry();
+        const colors = [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff];
+
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+
+        const moveSpeed = 0.1;
+        const touchSensitivity = 0.005;
+
+        let lastTouchX = 0;
+        let lastTouchY = 0;
+
+        function onTouchStart(event) {
+            lastTouchX = event.touches[0].clientX;
+            lastTouchY = event.touches[0].clientY;
+        }
+
+        function onTouchMove(event) {
+            const touchX = event.touches[0].clientX;
+            const touchY = event.touches[0].clientY;
+            const movementX = touchX - lastTouchX;
+            const movementY = touchY - lastTouchY;
+            
+            player.rotation.y -= movementX * touchSensitivity;
+            camera.rotation.x += movementY * touchSensitivity;
+            camera.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, camera.rotation.x));
+            
+            lastTouchX = touchX;
+            lastTouchY = touchY;
+        }
+
+        document.addEventListener('touchstart', onTouchStart);
+        document.addEventListener('touchmove', onTouchMove);
+
+        function placeBlock() {
+            raycaster.setFromCamera(pointer, camera);
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            const position = player.position.clone().add(direction.multiplyScalar(5));
+            position.round();
+            
+            const block = new THREE.Mesh(
+                geometry, 
+                new THREE.MeshBasicMaterial({color: colors[Math.floor(Math.random() * colors.length)]})
+            );
+            block.position.copy(position);
+            scene.add(block);
+        }
+
+        document.addEventListener('click', placeBlock);
+
+        const controlButtons = {
+            up: document.getElementById('up'),
+            down: document.getElementById('down'),
+            left: document.getElementById('left'),
+            right: document.getElementById('right')
+        };
+
+        const activeControls = new Set();
+
+        Object.entries(controlButtons).forEach(([direction, button]) => {
+            button.addEventListener('touchstart', () => activeControls.add(direction));
+            button.addEventListener('touchend', () => activeControls.delete(direction));
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if(activeControls.has('up')) player.translateZ(-moveSpeed);
+            if(activeControls.has('down')) player.translateZ(moveSpeed);
+            if(activeControls.has('left')) player.translateX(-moveSpeed);
+            if(activeControls.has('right')) player.translateX(moveSpeed);
+            
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
